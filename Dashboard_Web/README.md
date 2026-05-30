@@ -1,6 +1,7 @@
 # Dashboard Web
 
 Dashboard interactivo desarrollado para la visualización remota de variables ambientales transmitidas desde un nodo IoT basado en ESP32-S3 y SIM7670G.
+Link:http://sensor-dashboard-mateo.s3-website.us-east-2.amazonaws.com/
 
 ## Funcionalidades
 
