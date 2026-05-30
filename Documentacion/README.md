@@ -8,5 +8,4 @@ Esta carpeta contiene los documentos técnicos asociados al proyecto de monitore
 - Diagramas de arquitectura.
 - Diagramas de flujo del firmware.
 - Modelo 3D del encapsulado.
-- Capturas de validación experimental.
 
