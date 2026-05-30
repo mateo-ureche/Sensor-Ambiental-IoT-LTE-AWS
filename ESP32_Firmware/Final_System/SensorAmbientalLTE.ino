@@ -40,7 +40,7 @@ DHT dht(DHTPIN, DHTTYPE);
 
 // ---------- BMP280 ----------
 #define I2C_SDA 1
-#define I2C_SCL 2
+#define I2C_SCL 42
 Adafruit_BMP280 bmp;
 
 // ---------- LTE ----------
@@ -353,32 +353,38 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // 1. Pantalla primero — igual que el codigo que funciona
+  // 1. BMP280 PRIMERO antes de la pantalla
+  Wire.begin(I2C_SDA, I2C_SCL);
+  bmp_ok = bmp.begin(0x76);
+  if (!bmp_ok) bmp_ok = bmp.begin(0x77);
+  if (bmp_ok) {
+    bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,
+                    Adafruit_BMP280::SAMPLING_X2,
+                    Adafruit_BMP280::SAMPLING_X16,
+                    Adafruit_BMP280::FILTER_X16,
+                    Adafruit_BMP280::STANDBY_MS_500);
+    Serial.println("BMP280 OK");
+  } else {
+    Serial.println("BMP280 no encontrado");
+  }
+
+  // 2. Pantalla después del BMP280
   pinMode(TFT_LED, OUTPUT);
   digitalWrite(TFT_LED, HIGH);
   tft.begin(24000000);
   tft.setRotation(1);
   dibujarEstatico();
 
-  // 2. LED
+  // 3. LED
   led.begin();
   led.setBrightness(80);
   ledColor(0, 0, 255);
 
-  // 3. Sensores
+  // 4. DHT22
   dht.begin();
   delay(2000);
-  Wire.begin(I2C_SDA, I2C_SCL);
-  bmp_ok = bmp.begin(0x76);
-  if (!bmp_ok) bmp_ok = bmp.begin(0x77);
-  if (!bmp_ok) {
-    Serial.println("BMP280 no encontrado");
-    ledColor(255, 0, 0);
-  } else {
-    Serial.println("Sensores OK");
-  }
 
-  // 4. LTE
+  // 5. LTE
   sim.begin(115200, SERIAL_8N1, 17, 18);
   Serial.println("Iniciando modem...");
   modem.restart();
@@ -398,7 +404,7 @@ void setup() {
   enviar("AT+CGNSSPWR=1");
   delay(2000);
 
-  // 5. Redibujar pantalla después del LTE
+  // 6. Redibujar pantalla después del LTE
   dibujarEstatico();
 
   Serial.println("Listo!");
