@@ -1,0 +1,73 @@
+# AWS Cloud
+
+Infraestructura cloud desarrollada sobre Amazon Web Services (AWS) para la recepción, almacenamiento y consulta de datos ambientales transmitidos por un nodo IoT basado en ESP32-S3 y SIM7670G.
+
+## Arquitectura implementada
+
+ESP32-S3 + SIM7670G
+↓
+API Gateway
+↓
+AWS Lambda (iot_publish)
+↓
+Amazon DynamoDB
+↓
+AWS Lambda (iot_read)
+↓
+Dashboard Web
+
+## Servicios utilizados
+
+- Amazon API Gateway
+- AWS Lambda
+- Amazon DynamoDB
+- AWS IoT Core
+
+## Funciones Lambda
+
+### iot_publish.py
+
+Función encargada de:
+
+- Recibir datos mediante HTTPS.
+- Procesar el mensaje JSON recibido.
+- Publicar información en AWS IoT Core.
+- Almacenar registros en Amazon DynamoDB.
+
+Variables almacenadas:
+
+- temperatura
+- humedad
+- presion
+- lat
+- lon
+- altitud
+- timestamp
+
+### iot_read.py
+
+Función encargada de:
+
+- Consultar registros históricos almacenados en DynamoDB.
+- Recuperar las últimas 50 mediciones.
+- Convertir datos a formato JSON.
+- Entregar información al dashboard web.
+
+## Tabla DynamoDB
+
+Tabla utilizada:
+
+sensor_data
+
+Clave principal:
+
+device_id
+
+## Región AWS
+
+us-east-2 (Ohio)
+
+## Proyecto
+
+Reto IoT-LTE 2026
+Universidad del Norte
