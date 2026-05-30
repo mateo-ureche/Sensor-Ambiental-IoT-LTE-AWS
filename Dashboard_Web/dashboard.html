@@ -1,1 +1,788 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor Ambiental · ESP32-S3</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f0f2f5;color:#1a1a1a;min-height:100vh}
 
+/* ── HEADER ── */
+.hdr{background:#fff;border-bottom:1px solid #e0e0e0;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;gap:12px;flex-wrap:wrap}
+.hdr-left{display:flex;align-items:center;gap:10px}
+.logo{width:36px;height:36px;background:linear-gradient(135deg,#1D9E75,#378ADD);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.app-title{font-size:15px;font-weight:700;color:#111}
+.app-sub{font-size:11px;color:#888;margin-top:1px}
+.hdr-mid{display:flex;gap:5px}
+.tf-btn{padding:5px 12px;border-radius:20px;border:1px solid #e0e0e0;background:#fff;font-size:12px;cursor:pointer;color:#555;transition:all .2s}
+.tf-btn.active{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.hdr-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.si{display:flex;align-items:center;gap:5px;font-size:12px;color:#888}
+.dot{width:8px;height:8px;border-radius:50%;background:#1D9E75;animation:pulse 2s infinite;flex-shrink:0}
+.dot.err{background:#e53935;animation:none}
+.hdr-btn{padding:5px 12px;border-radius:6px;border:1px solid #e0e0e0;background:#fff;font-size:12px;cursor:pointer;color:#555;display:flex;align-items:center;gap:4px}
+.hdr-btn:hover{background:#f5f5f5}
+.hdr-btn.on{background:#1D9E75;color:#fff;border-color:#1D9E75}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.wrap{padding:20px 24px;max-width:1500px;margin:0 auto}
+
+/* ── SMART ALERTS ── */
+.smart-alerts{margin-bottom:14px;display:flex;flex-direction:column;gap:5px}
+.s-alert{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:8px;font-size:13px;border-left:4px solid #ccc}
+.s-alert.warn{background:#fff8e1;border-color:#f9a825;color:#e65100}
+.s-alert.crit{background:#ffebee;border-color:#e53935;color:#b71c1c}
+.s-alert-time{margin-left:auto;font-size:10px;opacity:.7;font-family:monospace}
+
+/* ── WEATHER HERO ── */
+.weather-hero{background:linear-gradient(135deg,#1D9E75 0%,#378ADD 100%);border-radius:16px;padding:24px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px;flex-wrap:wrap}
+.wh-left{display:flex;align-items:center;gap:20px}
+.wh-icon{font-size:64px;line-height:1;flex-shrink:0}
+.wh-condition{color:#fff}
+.wh-state{font-size:24px;font-weight:700;margin-bottom:4px}
+.wh-sub{font-size:13px;opacity:.85;margin-bottom:8px}
+.wh-detail{font-size:12px;opacity:.75;max-width:380px;line-height:1.5}
+.wh-right{display:flex;gap:24px;flex-wrap:wrap}
+.wh-stat{text-align:center;color:#fff}
+.wh-stat-val{font-size:28px;font-weight:300;line-height:1}
+.wh-stat-lbl{font-size:11px;opacity:.75;margin-top:2px}
+
+/* Animaciones estado climático */
+@keyframes sunny{0%,100%{transform:scale(1) rotate(0deg)}50%{transform:scale(1.08) rotate(8deg)}}
+@keyframes rainy{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes humid{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.7;transform:scale(.95)}}
+@keyframes cold{0%,100%{transform:rotate(0deg)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+@keyframes storm{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.1)}}
+@keyframes cloudy{0%,100%{transform:translateX(0)}50%{transform:translateX(6px)}}
+.anim-sunny{animation:sunny 3s ease-in-out infinite}
+.anim-rainy{animation:rainy 1s ease-in-out infinite}
+.anim-humid{animation:humid 2.5s ease-in-out infinite}
+.anim-cold{animation:cold 2s ease-in-out infinite}
+.anim-storm{animation:storm .6s ease-in-out infinite}
+.anim-cloudy{animation:cloudy 3s ease-in-out infinite}
+
+/* ── SECTION ── */
+.sec{font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.8px;margin:18px 0 10px;display:flex;align-items:center;gap:8px}
+.sec::after{content:'';flex:1;height:1px;background:#e0e0e0}
+
+/* ── CARDS ── */
+.cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:16px;position:relative;overflow:hidden;transition:box-shadow .2s,border-color .2s}
+.card:hover{box-shadow:0 4px 18px rgba(0,0,0,.08)}
+.card.ok{border-top:3px solid #1D9E75}
+.card.warn{border-top:3px solid #f9a825;background:#fffdf5}
+.card.crit{border-top:3px solid #e53935;background:#fff5f5}
+.card-lbl{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.8px;margin-bottom:7px}
+.card-val{font-size:30px;font-weight:300;line-height:1}
+.card-unit{font-size:12px;color:#999;margin-top:2px}
+.card-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;margin-top:6px}
+.b-ok{background:#e8f5e9;color:#2e7d32}
+.b-warn{background:#fff8e1;color:#e65100}
+.b-crit{background:#ffebee;color:#c62828}
+.bar{margin-top:8px;height:3px;background:#f0f0f0;border-radius:2px;overflow:hidden}
+.bar-f{height:100%;border-radius:2px;transition:width .6s,background .4s}
+.card-stats{margin-top:10px;padding-top:10px;border-top:1px solid #f0f0f0;display:flex;gap:10px;flex-wrap:wrap}
+.stat{font-size:10px;color:#aaa}
+.stat b{display:block;font-size:12px;color:#333;font-weight:500}
+.card-delta{font-size:11px;margin-top:6px;font-weight:600}
+.delta-up{color:#e53935}
+.delta-dn{color:#1D9E75}
+.delta-eq{color:#888}
+
+/* ── DAILY SUMMARY ── */
+.daily-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+@media(max-width:700px){.daily-grid{grid-template-columns:1fr}}
+.daily-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:16px}
+.daily-title{font-size:12px;font-weight:700;color:#555;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.daily-rows{display:flex;flex-direction:column;gap:0}
+.daily-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f5f5f5;font-size:12px}
+.daily-row:last-child{border:none}
+.daily-key{color:#888}
+.daily-val{font-weight:600;color:#111}
+.cmp-arrow{font-size:14px;margin-right:4px}
+
+/* ── CHARTS ── */
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}
+.chart-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:16px}
+.chart-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.chart-title{font-size:13px;font-weight:600;color:#333}
+.chart-sub{font-size:11px;color:#999;margin-top:1px}
+.chart-actions{display:flex;gap:4px}
+.c-btn{padding:3px 8px;border:1px solid #e0e0e0;border-radius:4px;font-size:10px;cursor:pointer;background:#fff;color:#555}
+.c-btn:hover{background:#f5f5f5}
+.chart-wrap{position:relative;height:190px}
+.chart-hint{font-size:10px;color:#ddd;text-align:right;margin-top:3px}
+
+/* ── BOTTOM ── */
+.bottom-grid{display:grid;grid-template-columns:1fr 360px;gap:10px}
+@media(max-width:1050px){.bottom-grid{grid-template-columns:1fr}}
+
+.map-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;overflow:hidden}
+.map-top{padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+.map-top-title{font-size:13px;font-weight:600}
+.map-coords{font-size:11px;color:#999;font-family:monospace}
+#map{height:260px}
+.map-fc{padding:10px 16px;background:#f8f9fa;border-top:1px solid #f0f0f0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.fc-item{text-align:center;font-size:11px;color:#666}
+.fc-item b{display:block;font-size:13px;font-weight:600;margin-top:2px}
+
+.side-col{display:flex;flex-direction:column;gap:10px}
+.info-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:14px 16px}
+.info-title{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;font-weight:700}
+.info-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:12px}
+.info-row:last-child{border:none}
+.info-key{color:#888}
+.info-val{font-weight:500;color:#111}
+
+/* ── TABLE ── */
+.table-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;overflow:hidden}
+.table-hdr{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;gap:8px}
+.table-title{font-size:13px;font-weight:600}
+.table-btns{display:flex;gap:8px}
+.exp-btn{padding:6px 14px;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500}
+.btn-csv{background:#378ADD;color:#fff}
+.btn-csv:hover{background:#2a6fb0}
+.btn-pdf{background:#e53935;color:#fff}
+.btn-pdf:hover{background:#c62828}
+.table-wrap{max-height:260px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:7px 12px;text-align:left;background:#f8f9fa;color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;font-weight:700}
+td{padding:7px 12px;border-bottom:1px solid #f5f5f5;color:#333;font-family:monospace}
+tr:hover td{background:#f9f9f9}
+.td-ok{color:#1D9E75;font-weight:600}
+.td-warn{color:#f9a825;font-weight:600}
+.td-crit{color:#e53935;font-weight:600}
+
+/* ── ALERTS ── */
+.alerts-card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:16px}
+.al-log{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.al-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border-left:3px solid #ccc;font-size:12px;background:#f8f9fa}
+.al-item.warn{border-color:#f9a825;background:#fffdf0}
+.al-item.crit{border-color:#e53935;background:#fff5f5}
+.al-ts{color:#aaa;font-size:10px;margin-left:auto;font-family:monospace}
+.no-al{color:#ccc;text-align:center;padding:20px;font-size:13px}
+
+.footer{text-align:center;padding:16px;font-size:11px;color:#ccc;border-top:1px solid #e0e0e0;margin-top:20px}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-left">
+    <div class="logo">🌡</div>
+    <div>
+      <div class="app-title">Monitor Ambiental</div>
+      <div class="app-sub">ESP32-S3 + SIM7670G · AWS IoT Core · Universidad del Norte</div>
+    </div>
+  </div>
+  <div class="hdr-mid">
+    <button class="tf-btn" onclick="setFilter(1,this)">1h</button>
+    <button class="tf-btn" onclick="setFilter(6,this)">6h</button>
+    <button class="tf-btn" onclick="setFilter(24,this)">24h</button>
+    <button class="tf-btn active" onclick="setFilter(0,this)">Todo</button>
+  </div>
+  <div class="hdr-right">
+    <div class="si"><div class="dot" id="dot"></div><span id="txt-st">Conectando...</span></div>
+    <div class="si">🛰 <span id="txt-gps">GPS --</span></div>
+    <div class="si">🕐 <span id="txt-time">--:--:--</span></div>
+    <div class="si">📊 <span id="txt-rec">--</span></div>
+    <button class="hdr-btn" id="notif-btn" onclick="toggleNotif()">🔔 Alertas</button>
+    <button class="hdr-btn" id="sound-btn" onclick="toggleSound()">🔇 Sonido</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- SMART ALERTS -->
+  <div class="smart-alerts" id="smart-alerts"></div>
+
+  <!-- WEATHER HERO ANIMADO -->
+  <div class="weather-hero" id="weather-hero">
+    <div class="wh-left">
+      <div class="wh-icon" id="wh-icon">⛅</div>
+      <div class="wh-condition">
+        <div class="wh-state" id="wh-state">Analizando...</div>
+        <div class="wh-sub" id="wh-sub">Calculando tendencia de presión</div>
+        <div class="wh-detail" id="wh-detail">Esperando datos del sensor...</div>
+      </div>
+    </div>
+    <div class="wh-right">
+      <div class="wh-stat"><div class="wh-stat-val" id="wh-temp">--°</div><div class="wh-stat-lbl">Temperatura</div></div>
+      <div class="wh-stat"><div class="wh-stat-val" id="wh-hum">--%</div><div class="wh-stat-lbl">Humedad</div></div>
+      <div class="wh-stat"><div class="wh-stat-val" id="wh-pres">--</div><div class="wh-stat-lbl">hPa</div></div>
+      <div class="wh-stat"><div class="wh-stat-val" id="wh-hi">--°</div><div class="wh-stat-lbl">Sensación</div></div>
+    </div>
+  </div>
+
+  <!-- CARDS -->
+  <div class="sec">Métricas en tiempo real</div>
+  <div class="cards-grid">
+
+    <div class="card ok" id="card-temp">
+      <div class="card-lbl">🌡 Temperatura</div>
+      <div class="card-val" id="v-temp">--</div>
+      <div class="card-unit">°C</div>
+      <div id="temp-delta" class="card-delta"></div>
+      <div class="bar"><div class="bar-f" id="b-temp" style="width:0%"></div></div>
+      <div class="card-stats">
+        <div class="stat">Mín<b id="mn-temp">--</b></div>
+        <div class="stat">Máx<b id="mx-temp">--</b></div>
+        <div class="stat">Prom<b id="av-temp">--</b></div>
+      </div>
+    </div>
+
+    <div class="card ok" id="card-hum">
+      <div class="card-lbl">💧 Humedad</div>
+      <div class="card-val" id="v-hum">--</div>
+      <div class="card-unit">%</div>
+      <div id="hum-delta" class="card-delta"></div>
+      <div class="bar"><div class="bar-f" id="b-hum" style="width:0%"></div></div>
+      <div class="card-stats">
+        <div class="stat">Mín<b id="mn-hum">--</b></div>
+        <div class="stat">Máx<b id="mx-hum">--</b></div>
+        <div class="stat">Prom<b id="av-hum">--</b></div>
+      </div>
+    </div>
+
+    <div class="card ok" id="card-pres">
+      <div class="card-lbl">🌬 Presión <span id="pres-trend"></span></div>
+      <div class="card-val" id="v-pres">--</div>
+      <div class="card-unit">hPa</div>
+      <div id="pres-delta" class="card-delta"></div>
+      <div class="bar"><div class="bar-f" id="b-pres" style="width:0%"></div></div>
+      <div class="card-stats">
+        <div class="stat">Mín<b id="mn-pres">--</b></div>
+        <div class="stat">Máx<b id="mx-pres">--</b></div>
+        <div class="stat">Δ/h<b id="pres-dh">--</b></div>
+      </div>
+    </div>
+
+    <div class="card ok" id="card-hi">
+      <div class="card-lbl">🥵 Índice de calor</div>
+      <div class="card-val" id="v-hi">--</div>
+      <div class="card-unit">°C · Sensación térmica</div>
+      <div id="hi-badge" class="card-badge b-ok">--</div>
+      <div class="card-stats">
+        <div class="stat">Vs T° real<b id="hi-diff">--</b></div>
+      </div>
+    </div>
+
+    <div class="card ok" id="card-dew">
+      <div class="card-lbl">🌫 Punto de rocío</div>
+      <div class="card-val" id="v-dew">--</div>
+      <div class="card-unit">°C</div>
+      <div id="dew-badge" class="card-badge b-ok">--</div>
+      <div class="card-stats">
+        <div class="stat">Confort<b id="comfort">--</b></div>
+      </div>
+    </div>
+
+    <div class="card ok">
+      <div class="card-lbl">📍 GPS / Altitud</div>
+      <div class="card-val" id="v-alt">--</div>
+      <div class="card-unit">m.s.n.m.</div>
+      <div class="card-stats">
+        <div class="stat">Lat<b id="v-lat">--</b></div>
+        <div class="stat">Lon<b id="v-lon">--</b></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RESUMEN DIARIO + COMPARACIÓN -->
+  <div class="sec">Resumen diario y comparación</div>
+  <div class="daily-grid">
+    <div class="daily-card">
+      <div class="daily-title">📅 Hoy — <span id="today-date">--</span></div>
+      <div class="daily-row"><span class="daily-key">Temp. máxima</span><span class="daily-val" id="td-tmax">--</span></div>
+      <div class="daily-row"><span class="daily-key">Temp. mínima</span><span class="daily-val" id="td-tmin">--</span></div>
+      <div class="daily-row"><span class="daily-key">Temp. promedio</span><span class="daily-val" id="td-tavg">--</span></div>
+      <div class="daily-row"><span class="daily-key">Humedad máx.</span><span class="daily-val" id="td-hmax">--</span></div>
+      <div class="daily-row"><span class="daily-key">Humedad mín.</span><span class="daily-val" id="td-hmin">--</span></div>
+      <div class="daily-row"><span class="daily-key">Presión máx.</span><span class="daily-val" id="td-pmax">--</span></div>
+      <div class="daily-row"><span class="daily-key">Presión mín.</span><span class="daily-val" id="td-pmin">--</span></div>
+      <div class="daily-row"><span class="daily-key">Lecturas de hoy</span><span class="daily-val" id="td-count">--</span></div>
+    </div>
+    <div class="daily-card">
+      <div class="daily-title">📊 Comparación vs. ayer</div>
+      <div class="daily-row"><span class="daily-key">Temp. promedio</span><span class="daily-val" id="cmp-tavg">--</span></div>
+      <div class="daily-row"><span class="daily-key">Temp. máxima</span><span class="daily-val" id="cmp-tmax">--</span></div>
+      <div class="daily-row"><span class="daily-key">Temp. mínima</span><span class="daily-val" id="cmp-tmin">--</span></div>
+      <div class="daily-row"><span class="daily-key">Humedad prom.</span><span class="daily-val" id="cmp-havg">--</span></div>
+      <div class="daily-row"><span class="daily-key">Presión prom.</span><span class="daily-val" id="cmp-pavg">--</span></div>
+      <div class="daily-row"><span class="daily-key">Lecturas ayer</span><span class="daily-val" id="cmp-count">--</span></div>
+      <div class="daily-row"><span class="daily-key">Datos ayer</span><span class="daily-val" id="cmp-avail" style="color:#aaa">Sin datos</span></div>
+    </div>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="sec">Historial + predicción</div>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <div><div class="chart-title">Temperatura</div><div class="chart-sub">°C · Punteado = predicción</div></div>
+        <div class="chart-actions"><button class="c-btn" onclick="resetZoom(cT)">↺ Reset</button></div>
+      </div>
+      <div class="chart-wrap"><canvas id="cT"></canvas></div>
+      <div class="chart-hint">🖱 Scroll = zoom · Arrastrar = mover</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <div><div class="chart-title">Humedad relativa</div><div class="chart-sub">% · Punteado = predicción</div></div>
+        <div class="chart-actions"><button class="c-btn" onclick="resetZoom(cH)">↺ Reset</button></div>
+      </div>
+      <div class="chart-wrap"><canvas id="cH"></canvas></div>
+      <div class="chart-hint">🖱 Scroll = zoom · Arrastrar = mover</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-hdr">
+        <div><div class="chart-title">Presión atmosférica</div><div class="chart-sub">hPa · Punteado = predicción</div></div>
+        <div class="chart-actions"><button class="c-btn" onclick="resetZoom(cP)">↺ Reset</button></div>
+      </div>
+      <div class="chart-wrap"><canvas id="cP"></canvas></div>
+      <div class="chart-hint">🖱 Scroll = zoom · Arrastrar = mover</div>
+    </div>
+  </div>
+
+  <!-- MAP + SIDE -->
+  <div class="sec">Localización GPS</div>
+  <div class="bottom-grid">
+    <div>
+      <div class="map-card">
+        <div class="map-top">
+          <div class="map-top-title">📍 Ubicación en tiempo real + ruta</div>
+          <div class="map-coords" id="coords">Esperando GPS...</div>
+        </div>
+        <div id="map"></div>
+        <div class="map-fc">
+          <div class="fc-item">+1h<b id="fc-1h">--</b></div>
+          <div class="fc-item">+2h<b id="fc-2h">--</b></div>
+          <div class="fc-item">+3h<b id="fc-3h">--</b></div>
+        </div>
+      </div>
+    </div>
+    <div class="side-col">
+      <div class="info-card">
+        <div class="info-title">Estado del sistema</div>
+        <div class="info-row"><span class="info-key">Dispositivo</span><span class="info-val">ESP32-S3R2</span></div>
+        <div class="info-row"><span class="info-key">Módem</span><span class="info-val">SIM7670G LTE</span></div>
+        <div class="info-row"><span class="info-key">Último dato</span><span class="info-val" id="last-ts">--</span></div>
+        <div class="info-row"><span class="info-key">Estado</span><span class="info-val" id="data-state">--</span></div>
+        <div class="info-row"><span class="info-key">GPS</span><span class="info-val" id="gps-state">--</span></div>
+        <div class="info-row"><span class="info-key">Total registros</span><span class="info-val" id="rec-total">--</span></div>
+      </div>
+      <div class="info-card">
+        <div class="info-title">Umbrales configurados</div>
+        <div class="info-row"><span class="info-key">Temp. alta</span><span class="info-val" style="color:#e53935">&gt; 35°C</span></div>
+        <div class="info-row"><span class="info-key">Humedad alta</span><span class="info-val" style="color:#f9a825">&gt; 85%</span></div>
+        <div class="info-row"><span class="info-key">Humedad baja</span><span class="info-val" style="color:#f9a825">&lt; 20%</span></div>
+        <div class="info-row"><span class="info-key">Presión baja</span><span class="info-val" style="color:#378ADD">&lt; 1000 hPa</span></div>
+        <div class="info-row"><span class="info-key">Índice calor</span><span class="info-val" style="color:#e53935">&gt; 32°C</span></div>
+        <div class="info-row"><span class="info-key">Sin datos</span><span class="info-val" style="color:#888">&gt; 30 seg</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="sec">Datos recientes</div>
+  <div class="table-card">
+    <div class="table-hdr">
+      <div class="table-title">Últimas 20 lecturas</div>
+      <div class="table-btns">
+        <button class="exp-btn btn-csv" onclick="exportCSV()">⬇ CSV</button>
+        <button class="exp-btn btn-pdf" onclick="exportPDF()">📄 PDF</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th><th>Temp °C</th><th>Hum %</th><th>Presión hPa</th>
+            <th>Sensación</th><th>Rocío</th><th>Lat</th><th>Lon</th><th>Alt m</th>
+          </tr>
+        </thead>
+        <tbody id="data-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ALERTS -->
+  <div class="sec">Registro de alertas</div>
+  <div class="alerts-card">
+    <div class="al-log" id="alerts-list"><div class="no-al">Sin alertas registradas</div></div>
+  </div>
+
+</div>
+
+<div class="footer">Monitor Ambiental · ESP32-S3 + SIM7670G · AWS IoT Core · Universidad del Norte · Barranquilla, Colombia</div>
+
+<script>
+const API='https://x8etdro2r9.execute-api.us-east-2.amazonaws.com/data';
+const TH={temp:35,hum_hi:85,hum_lo:20,pres:1000,hi:32};
+
+let allData=[], filterHours=0, alertLog=[], alertDurations={};
+let notifOn=false, soundOn=false, lastDataTs=null;
+let audioCtx=null;
+
+// ── UTILS ──
+const fmt=ts=>[new Date(ts).getHours(),new Date(ts).getMinutes(),new Date(ts).getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+const avg=a=>a.length?(a.reduce((s,v)=>s+v,0)/a.length):0;
+const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+const todayStr=()=>new Date().toDateString();
+const yesterdayStr=()=>new Date(Date.now()-86400000).toDateString();
+
+// ── CÁLCULOS ──
+function heatIndex(T,H){
+  if(T<27||H<40)return T;
+  return -8.78469475556+1.61139411*T+2.33854883889*H-0.14611605*T*H-0.012308094*T*T-0.0164248278*H*H+0.002211732*T*T*H+0.00072546*T*H*H-0.000003582*T*T*H*H;
+}
+function dewPoint(T,H){const a=17.625,b=243.04,x=Math.log(H/100)+a*T/(b+T);return b*x/(a-x);}
+function hiCat(hi){
+  if(hi<27)return{l:'😊 Confortable',c:'b-ok'};
+  if(hi<32)return{l:'😅 Precaución',c:'b-warn'};
+  if(hi<41)return{l:'🥵 Prec. extrema',c:'b-crit'};
+  return{l:'🔴 Peligro',c:'b-crit'};
+}
+function dewCat(d,T){const df=T-d;if(df>20)return{l:'Muy seco',c:'b-warn'};if(df>10)return{l:'Confortable',c:'b-ok'};if(df>5)return{l:'Húmedo',c:'b-warn'};return{l:'Muy húmedo',c:'b-crit'};}
+function comfortTxt(T,H){if(T>=20&&T<=26&&H>=30&&H<=60)return'✅ Confortable';if(T>28&&H>70)return'⚠️ Cálido húmedo';if(T>35)return'🔴 Muy caluroso';if(T<18)return'❄️ Fresco';if(H<20)return'⚠️ Muy seco';return'🟡 Aceptable';}
+
+// ── COLOR CODING ──
+const tcls=t=>t>35?'crit':t>28?'warn':'ok';
+const hcls=h=>(h>85||h<20)?'crit':(h>70||h<30)?'warn':'ok';
+const pcls=p=>p<1000?'crit':p<1005?'warn':'ok';
+const tcol=t=>t>35?'#e53935':t>28?'#f9a825':'#D85A30';
+const hcol=h=>(h>85||h<20)?'#e53935':(h>70||h<30)?'#f9a825':'#1D9E75';
+const pcol=p=>p<1000?'#e53935':p<1005?'#f9a825':'#378ADD';
+
+// ── PREDICCIÓN CLIMÁTICA ANIMADA ──
+function weatherState(data){
+  if(data.length<5)return{icon:'⛅',anim:'anim-cloudy',state:'Analizando...',sub:'Acumulando lecturas...',detail:'Necesitamos más datos para calcular la tendencia.'};
+  const last=data[data.length-1];
+  const old=data[Math.max(0,data.length-36)];
+  const delta=last.presion-old.presion;
+  const T=last.temperatura, H=last.humedad;
+
+  if(T<18)return{icon:'❄️',anim:'anim-cold',state:'Temperatura fresca',sub:'Condiciones frías detectadas',detail:`Temperatura de ${T.toFixed(1)}°C por debajo del rango confortable. Considere abrigo.`};
+  if(H>85&&T>25)return{icon:'🌫',anim:'anim-humid',state:'Muy húmedo',sub:'Humedad elevada',detail:`Humedad del ${H.toFixed(0)}% con ${T.toFixed(1)}°C — condiciones muy húmedas y calurosas.`};
+  if(delta>2)return{icon:'☀️',anim:'anim-sunny',state:'Buen tiempo',sub:'Presión en ascenso — despejado',detail:`Presión subiendo ${delta.toFixed(1)} hPa. Se espera cielo despejado y condiciones estables.`};
+  if(delta>0.5)return{icon:'🌤',anim:'anim-cloudy',state:'Tiempo estable',sub:'Presión levemente ascendente',detail:`Condiciones estables. Poca probabilidad de lluvia en las próximas horas.`};
+  if(delta>-0.5)return{icon:'⛅',anim:'anim-cloudy',state:'Variable',sub:'Presión estable',detail:`Sin cambios significativos en la presión (${last.presion.toFixed(1)} hPa). Tiempo variable.`};
+  if(delta>-2)return{icon:'🌧',anim:'anim-rainy',state:'Posible lluvia',sub:'Presión en descenso',detail:`Presión bajando ${Math.abs(delta).toFixed(1)} hPa. Posibles nubes y lluvia próximamente.`};
+  return{icon:'⛈',anim:'anim-storm',state:'Tormenta probable',sub:'Caída rápida de presión',detail:`Presión cayendo ${Math.abs(delta).toFixed(1)} hPa. Alta probabilidad de tormenta. Toma precauciones.`};
+}
+
+// ── REGRESIÓN ──
+function linReg(vals){const n=vals.length;let sx=0,sy=0,sxy=0,sxx=0;vals.forEach((v,i)=>{sx+=i;sy+=v;sxy+=i*v;sxx+=i*i});const m=(n*sxy-sx*sy)/(n*sxx-sx*sx||1);return{m,b:(sy-m*sx)/n};}
+function predict(vals,steps){const{m,b}=linReg(vals);return Array.from({length:steps},(_,i)=>+(b+m*(vals.length+i)).toFixed(2));}
+
+// ── COMPARACIÓN DIARIA ──
+function dailySummary(data){
+  const today=data.filter(d=>new Date(d.timestamp).toDateString()===todayStr());
+  const yest=data.filter(d=>new Date(d.timestamp).toDateString()===yesterdayStr());
+
+  const stats=arr=>arr.length?{
+    tmax:Math.max(...arr.map(d=>d.temperatura)),tmin:Math.min(...arr.map(d=>d.temperatura)),tavg:avg(arr.map(d=>d.temperatura)),
+    hmax:Math.max(...arr.map(d=>d.humedad)),hmin:Math.min(...arr.map(d=>d.humedad)),havg:avg(arr.map(d=>d.humedad)),
+    pmax:Math.max(...arr.map(d=>d.presion)),pmin:Math.min(...arr.map(d=>d.presion)),pavg:avg(arr.map(d=>d.presion)),count:arr.length
+  }:null;
+  return{today:stats(today),yest:stats(yest)};
+}
+
+function deltaStr(now,prev,unit='°C'){
+  if(!prev)return'<span style="color:#aaa">Sin datos ayer</span>';
+  const d=now-prev,s=d>0?'+':'';
+  const cls=d>0?'delta-up':d<0?'delta-dn':'delta-eq';
+  return`<span class="${cls}">${s}${d.toFixed(1)}${unit} vs ayer</span>`;
+}
+
+// ── MAPA ──
+const map=L.map('map').setView([10.9902,-74.82],17);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+const icon=L.divIcon({className:'',html:'<div style="width:14px;height:14px;background:#D85A30;border:2px solid #fff;border-radius:50%;box-shadow:0 0 10px #D85A3099"></div>',iconSize:[14,14],iconAnchor:[7,7]});
+let marker=null,route=null;
+
+// ── CHARTS ──
+const mkC=(id,col)=>new Chart(document.getElementById(id),{type:'line',data:{labels:[],datasets:[
+  {label:'Medición',data:[],borderColor:col,backgroundColor:col+'18',borderWidth:2,pointRadius:2,fill:true,tension:.3},
+  {label:'Predicción',data:[],borderColor:col,backgroundColor:'transparent',borderWidth:1.5,borderDash:[4,4],pointRadius:0,fill:false,tension:.3}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+  plugins:{legend:{display:false},zoom:{zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'},pan:{enabled:true,mode:'x'}}},
+  scales:{x:{ticks:{color:'#bbb',font:{size:10},maxTicksLimit:8,maxRotation:0},grid:{color:'#f0f0f0'}},y:{ticks:{color:'#bbb',font:{size:10}},grid:{color:'#f0f0f0'}}}}});
+const cT=mkC('cT','#D85A30'),cH=mkC('cH','#1D9E75'),cP=mkC('cP','#378ADD');
+const resetZoom=c=>c.resetZoom();
+
+// ── SONIDO ──
+function playBeep(){
+  try{
+    if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    [0,.3,.6].forEach(t=>{
+      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+      o.connect(g);g.connect(audioCtx.destination);
+      o.frequency.value=880;
+      g.gain.setValueAtTime(.2,audioCtx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+t+.2);
+      o.start(audioCtx.currentTime+t);o.stop(audioCtx.currentTime+t+.2);
+    });
+  }catch(e){}
+}
+
+function toggleNotif(){
+  if(!notifOn){Notification.requestPermission().then(p=>{if(p==='granted'){notifOn=true;document.getElementById('notif-btn').classList.add('on');document.getElementById('notif-btn').textContent='🔔 ON';}});}
+  else{notifOn=false;document.getElementById('notif-btn').classList.remove('on');document.getElementById('notif-btn').textContent='🔔 Alertas';}
+}
+function toggleSound(){
+  soundOn=!soundOn;const b=document.getElementById('sound-btn');
+  b.textContent=soundOn?'🔊 Sonido':'🔇 Sonido';b.classList.toggle('on',soundOn);
+}
+
+// ── ALERTAS ──
+function checkAlerts(data){
+  const last=data[data.length-1],now=Date.now(),alerts=[];
+  if(lastDataTs&&now-lastDataTs>30000)alerts.push({t:'crit',m:`⚡ Sin datos hace ${Math.round((now-lastDataTs)/1000)}s — sensor posiblemente desconectado`});
+  const hi=heatIndex(last.temperatura,last.humedad);
+  if(last.temperatura>=TH.temp){
+    if(!alertDurations.t)alertDurations.t=now;
+    const m=Math.round((now-alertDurations.t)/60000);
+    if(m>=1)alerts.push({t:'crit',m:`🌡 Temperatura alta ${m} min — ${last.temperatura.toFixed(1)}°C`});
+  }else delete alertDurations.t;
+  if(last.humedad>TH.hum_hi)alerts.push({t:'warn',m:`💧 Humedad alta: ${last.humedad.toFixed(1)}%`});
+  if(last.humedad<TH.hum_lo)alerts.push({t:'crit',m:`🏜 Humedad muy baja: ${last.humedad.toFixed(1)}%`});
+  if(last.presion<TH.pres)alerts.push({t:'crit',m:`🌀 Presión baja: ${last.presion.toFixed(1)} hPa`});
+  if(hi>=41)alerts.push({t:'crit',m:`🥵 Índice de calor crítico: ${hi.toFixed(1)}°C`});
+  else if(hi>=TH.hi)alerts.push({t:'warn',m:`🥵 Índice de calor elevado: ${hi.toFixed(1)}°C`});
+
+  document.getElementById('smart-alerts').innerHTML=alerts.map(a=>`<div class="s-alert ${a.t}">${a.m}<span class="s-alert-time">${fmt(now)}</span></div>`).join('');
+  alerts.forEach(a=>{
+    if(!alertLog.find(x=>x.m===a.m&&now-x.ts<60000)){
+      alertLog.unshift({...a,ts:now});
+      if(alertLog.length>30)alertLog.pop();
+      if(a.t==='crit'){
+        if(soundOn)playBeep();
+        if(notifOn&&Notification.permission==='granted')new Notification('⚠️ Alerta crítica',{body:a.m});
+      }
+    }
+  });
+}
+
+// ── FILTRO ──
+function setFilter(h,btn){filterHours=h;document.querySelectorAll('.tf-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+function getFiltered(){if(!filterHours)return allData;const c=Date.now()-filterHours*3600000;return allData.filter(d=>d.timestamp>=c);}
+
+// ── CSV ──
+function exportCSV(){
+  const data=getFiltered();
+  const rows=[['Fecha','Hora','Temp°C','Hum%','PresiónhPa','SensaciónTérmica°C','PuntoRocío°C','Lat','Lon','AltM']];
+  data.forEach(d=>rows.push([new Date(d.timestamp).toLocaleDateString('es-CO'),fmt(d.timestamp),d.temperatura.toFixed(1),d.humedad.toFixed(1),d.presion.toFixed(1),heatIndex(d.temperatura,d.humedad).toFixed(1),dewPoint(d.temperatura,d.humedad).toFixed(1),d.lat||'',d.lon||'',d.altitud||'']));
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));a.download=`sensor_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+}
+
+// ── PDF ──
+function exportPDF(){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+  const data=getFiltered();
+  const last=data[data.length-1];
+  const now=new Date();
+
+  // Header
+  doc.setFillColor(29,158,117);doc.rect(0,0,210,30,'F');
+  doc.setTextColor(255,255,255);doc.setFontSize(16);doc.setFont(undefined,'bold');
+  doc.text('Reporte Ambiental - ESP32-S3',14,12);
+  doc.setFontSize(9);doc.setFont(undefined,'normal');
+  doc.text(`Universidad del Norte · Barranquilla, Colombia · ${now.toLocaleDateString('es-CO')} ${fmt(now.getTime())}`,14,22);
+
+  // Stats actuales
+  doc.setTextColor(0,0,0);doc.setFontSize(11);doc.setFont(undefined,'bold');
+  doc.text('Lectura más reciente',14,42);
+  doc.autoTable({startY:46,head:[['Variable','Valor','Estado']],body:[
+    ['Temperatura',`${last.temperatura.toFixed(1)}°C`,last.temperatura>=35?'CRÍTICO':last.temperatura>=28?'ADVERTENCIA':'Normal'],
+    ['Humedad',`${last.humedad.toFixed(1)}%`,last.humedad>=85||last.humedad<=20?'CRÍTICO':last.humedad>=70?'ADVERTENCIA':'Normal'],
+    ['Presión',`${last.presion.toFixed(1)} hPa`,last.presion<=1000?'ADVERTENCIA':'Normal'],
+    ['Índice de calor',`${heatIndex(last.temperatura,last.humedad).toFixed(1)}°C`,''],
+    ['Punto de rocío',`${dewPoint(last.temperatura,last.humedad).toFixed(1)}°C`,''],
+    ['Altitud GPS',last.altitud?`${last.altitud.toFixed(0)} m`:'Sin GPS',''],
+  ],theme:'striped',headStyles:{fillColor:[29,158,117]}});
+
+  // Alertas
+  if(alertLog.length){
+    doc.setFontSize(11);doc.setFont(undefined,'bold');
+    doc.text('Registro de alertas',14,doc.lastAutoTable.finalY+12);
+    doc.autoTable({startY:doc.lastAutoTable.finalY+16,head:[['Hora','Alerta','Tipo']],
+      body:alertLog.slice(0,15).map(a=>[fmt(a.ts),a.m.replace(/[^\w\s°%.,:-]/g,''),a.t==='crit'?'CRÍTICO':'ADVERTENCIA']),
+      theme:'striped',headStyles:{fillColor:[55,138,221]}});
+  }
+
+  // Datos recientes
+  const slice=data.slice(-20);
+  doc.setFontSize(11);doc.setFont(undefined,'bold');
+  doc.text('Últimas 20 lecturas',14,doc.lastAutoTable.finalY+12);
+  doc.autoTable({startY:doc.lastAutoTable.finalY+16,
+    head:[['Hora','Temp°C','Hum%','Presión','Sensación','Rocío']],
+    body:slice.map(d=>[fmt(d.timestamp),d.temperatura.toFixed(1),d.humedad.toFixed(1),d.presion.toFixed(1),heatIndex(d.temperatura,d.humedad).toFixed(1),dewPoint(d.temperatura,d.humedad).toFixed(1)]),
+    theme:'striped',headStyles:{fillColor:[142,68,173]},styles:{fontSize:8}});
+
+  doc.save(`reporte_ambiental_${now.toISOString().slice(0,10)}.pdf`);
+}
+
+// ── MAIN ──
+async function fetchData(){
+  try{
+    const res=await fetch(API);
+    const data=await res.json();
+    if(!data.length)return;
+    allData=data;
+    const filt=getFiltered();
+    if(!filt.length)return;
+    const last=filt[filt.length-1],now=Date.now();
+    if(lastDataTs!==last.timestamp)lastDataTs=last.timestamp;
+
+    // Status
+    document.getElementById('dot').className='dot';
+    document.getElementById('txt-st').textContent='En línea · '+fmt(now);
+    document.getElementById('txt-time').textContent=fmt(now);
+    document.getElementById('txt-rec').textContent=filt.length+' reg.';
+    document.getElementById('last-ts').textContent=fmt(last.timestamp);
+    document.getElementById('data-state').textContent=(now-last.timestamp<30000)?'🟢 Activo':'🔴 Sin datos';
+    document.getElementById('gps-state').textContent=last.lat?'🟢 Fix OK':'🟡 Sin fix';
+    document.getElementById('rec-total').textContent=data.length+' total';
+
+    // Cálculos
+    const hi=heatIndex(last.temperatura,last.humedad);
+    const dew=dewPoint(last.temperatura,last.humedad);
+    const hiC=hiCat(hi),dewC=dewCat(dew,last.temperatura);
+
+    // Hero
+    const ws=weatherState(filt);
+    document.getElementById('wh-icon').textContent=ws.icon;
+    document.getElementById('wh-icon').className='wh-icon '+ws.anim;
+    document.getElementById('wh-state').textContent=ws.state;
+    document.getElementById('wh-sub').textContent=ws.sub;
+    document.getElementById('wh-detail').textContent=ws.detail;
+    document.getElementById('wh-temp').textContent=last.temperatura.toFixed(1)+'°';
+    document.getElementById('wh-hum').textContent=last.humedad.toFixed(0)+'%';
+    document.getElementById('wh-pres').textContent=last.presion.toFixed(0);
+    document.getElementById('wh-hi').textContent=hi.toFixed(1)+'°';
+
+    // Cards
+    document.getElementById('v-temp').textContent=last.temperatura.toFixed(1);
+    document.getElementById('v-hum').textContent=last.humedad.toFixed(1);
+    document.getElementById('v-pres').textContent=last.presion.toFixed(1);
+    document.getElementById('v-hi').textContent=hi.toFixed(1);
+    document.getElementById('v-dew').textContent=dew.toFixed(1);
+    document.getElementById('v-alt').textContent=last.altitud?last.altitud.toFixed(0):'--';
+    document.getElementById('v-lat').textContent=last.lat?last.lat.toFixed(5)+'°N':'--';
+    document.getElementById('v-lon').textContent=last.lon?Math.abs(last.lon).toFixed(5)+'°W':'--';
+    document.getElementById('txt-gps').textContent=last.lat?'GPS ✓':'GPS --';
+
+    const hiBadge=document.getElementById('hi-badge');hiBadge.textContent=hiC.l;hiBadge.className='card-badge '+hiC.c;
+    const dewBadge=document.getElementById('dew-badge');dewBadge.textContent=dewC.l;dewBadge.className='card-badge '+dewC.c;
+    document.getElementById('comfort').textContent=comfortTxt(last.temperatura,last.humedad);
+    document.getElementById('hi-diff').textContent=(hi-last.temperatura>=0?'+':'')+(hi-last.temperatura).toFixed(1)+'°C';
+
+    // Card classes
+    document.getElementById('card-temp').className='card '+tcls(last.temperatura);
+    document.getElementById('card-hum').className='card '+hcls(last.humedad);
+    document.getElementById('card-pres').className='card '+pcls(last.presion);
+    document.getElementById('card-hi').className='card '+(hi>=32?'warn':'ok');
+    document.getElementById('card-dew').className='card '+(dew>=25?'warn':'ok');
+
+    // Stats
+    const T=filt.map(d=>d.temperatura),H=filt.map(d=>d.humedad),P=filt.map(d=>d.presion);
+    document.getElementById('mn-temp').textContent=Math.min(...T).toFixed(1)+'°';
+    document.getElementById('mx-temp').textContent=Math.max(...T).toFixed(1)+'°';
+    document.getElementById('av-temp').textContent=avg(T).toFixed(1)+'°';
+    document.getElementById('mn-hum').textContent=Math.min(...H).toFixed(1)+'%';
+    document.getElementById('mx-hum').textContent=Math.max(...H).toFixed(1)+'%';
+    document.getElementById('av-hum').textContent=avg(H).toFixed(1)+'%';
+    document.getElementById('mn-pres').textContent=Math.min(...P).toFixed(1);
+    document.getElementById('mx-pres').textContent=Math.max(...P).toFixed(1);
+
+    // Bars
+    const bT=document.getElementById('b-temp'),bH=document.getElementById('b-hum'),bP=document.getElementById('b-pres');
+    bT.style.width=clamp(last.temperatura/40*100,0,100)+'%';bT.style.background=tcol(last.temperatura);
+    bH.style.width=clamp(last.humedad,0,100)+'%';bH.style.background=hcol(last.humedad);
+    bP.style.width=clamp((last.presion-980)/50*100,0,100)+'%';bP.style.background=pcol(last.presion);
+
+    // Presión tendencia
+    const pdelta=P.length>1?(P[P.length-1]-P[Math.max(0,P.length-12)]).toFixed(2):0;
+    document.getElementById('pres-trend').textContent=pdelta>0.3?'↑':pdelta<-0.3?'↓':'→';
+    document.getElementById('pres-dh').textContent=(pdelta>0?'+':'')+pdelta+' hPa';
+
+    // Resumen diario + comparación
+    const{today:td,yest:yd}=dailySummary(data);
+    if(td){
+      document.getElementById('today-date').textContent=new Date().toLocaleDateString('es-CO');
+      document.getElementById('td-tmax').textContent=td.tmax.toFixed(1)+'°C';
+      document.getElementById('td-tmin').textContent=td.tmin.toFixed(1)+'°C';
+      document.getElementById('td-tavg').textContent=td.tavg.toFixed(1)+'°C';
+      document.getElementById('td-hmax').textContent=td.hmax.toFixed(1)+'%';
+      document.getElementById('td-hmin').textContent=td.hmin.toFixed(1)+'%';
+      document.getElementById('td-pmax').textContent=td.pmax.toFixed(1)+' hPa';
+      document.getElementById('td-pmin').textContent=td.pmin.toFixed(1)+' hPa';
+      document.getElementById('td-count').textContent=td.count+' registros';
+    }
+    if(yd){
+      document.getElementById('cmp-avail').textContent='✅ Datos disponibles';document.getElementById('cmp-avail').style.color='#1D9E75';
+      document.getElementById('cmp-count').textContent=yd.count+' registros';
+      document.getElementById('cmp-tavg').innerHTML=deltaStr(td?.tavg,yd.tavg);
+      document.getElementById('cmp-tmax').innerHTML=deltaStr(td?.tmax,yd.tmax);
+      document.getElementById('cmp-tmin').innerHTML=deltaStr(td?.tmin,yd.tmin);
+      document.getElementById('cmp-havg').innerHTML=deltaStr(td?.havg,yd.havg,'%');
+      document.getElementById('cmp-pavg').innerHTML=deltaStr(td?.pavg,yd.pavg,' hPa');
+    }
+
+    // Alertas
+    checkAlerts(filt);
+
+    // GPS mapa
+    if(last.lat){
+      document.getElementById('coords').textContent=`${last.lat.toFixed(5)}°N  ${Math.abs(last.lon).toFixed(5)}°W`;
+      const ll=[last.lat,last.lon];
+      if(!marker){marker=L.marker(ll,{icon}).addTo(map);map.setView(ll,17);}else marker.setLatLng(ll);
+      const pts=filt.filter(d=>d.lat).map(d=>[d.lat,d.lon]);
+      if(pts.length>1){if(route)map.removeLayer(route);route=L.polyline(pts,{color:'#378ADD',weight:2,opacity:.6}).addTo(map);}
+    }
+
+    // Predicción temperatura
+    const pv=predict(T.slice(-20),3);
+    document.getElementById('fc-1h').textContent=`🌡 ${pv[0]?.toFixed(1)||'--'}°C`;
+    document.getElementById('fc-2h').textContent=`🌡 ${pv[1]?.toFixed(1)||'--'}°C`;
+    document.getElementById('fc-3h').textContent=`🌡 ${pv[2]?.toFixed(1)||'--'}°C`;
+
+    // Charts
+    const sl=filt.slice(-60),lb=sl.map(d=>fmt(d.timestamp)),PRED=12;
+    const pl=Array.from({length:PRED},(_,i)=>`+${(i+1)*5}s`);
+    const updC=(c,vals)=>{const pr=predict(vals,PRED),pad=new Array(lb.length).fill(null);c.data.labels=[...lb,...pl];c.data.datasets[0].data=[...vals,...new Array(PRED).fill(null)];c.data.datasets[1].data=[...pad,...pr];c.update('none');};
+    updC(cT,sl.map(d=>+d.temperatura.toFixed(1)));
+    updC(cH,sl.map(d=>+d.humedad.toFixed(1)));
+    updC(cP,sl.map(d=>+d.presion.toFixed(1)));
+
+    // Tabla
+    document.getElementById('data-table').innerHTML=filt.slice(-20).reverse().map(d=>{
+      const hi2=heatIndex(d.temperatura,d.humedad).toFixed(1),dw=dewPoint(d.temperatura,d.humedad).toFixed(1);
+      return`<tr><td>${fmt(d.timestamp)}</td><td class="td-${tcls(d.temperatura)}">${d.temperatura.toFixed(1)}</td><td class="td-${hcls(d.humedad)}">${d.humedad.toFixed(1)}</td><td class="td-${pcls(d.presion)}">${d.presion.toFixed(1)}</td><td>${hi2}</td><td>${dw}</td><td>${d.lat?d.lat.toFixed(5):'--'}</td><td>${d.lon?d.lon.toFixed(5):'--'}</td><td>${d.altitud?d.altitud.toFixed(0):'--'}</td></tr>`;
+    }).join('');
+
+    // Alert log
+    document.getElementById('alerts-list').innerHTML=alertLog.length?alertLog.map(a=>`<div class="al-item ${a.t}">⚠️ ${a.m}<span class="al-ts">${fmt(a.ts)}</span></div>`).join(''):'<div class="no-al">Sin alertas registradas</div>';
+
+  }catch(e){
+    document.getElementById('dot').className='dot err';
+    document.getElementById('txt-st').textContent='Sin conexión';
+  }
+}
+
+fetchData();
+setInterval(fetchData,5000);
+</script>
+</body>
+</html>
